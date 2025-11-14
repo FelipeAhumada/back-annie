@@ -1,0 +1,19 @@
+# app/core/jwt.py
+import datetime, jwt
+from app.core.config import settings
+
+def sign_jwt(user_id: str, tenant_id: str, role: str, session_id: str) -> str:
+    now = datetime.datetime.utcnow()
+    payload = {
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "role": role,
+        "sid": session_id,                      # << clave
+        "iat": now,
+        "exp": now + datetime.timedelta(minutes=settings.JWT_EXP_MIN),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+def decode_jwt(token: str) -> dict:
+    return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+

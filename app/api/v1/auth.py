@@ -8,7 +8,7 @@ Follows Layer 1 and Layer 3 rules:
 """
 from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from core.auth import auth_required, Authed
 from services.auth_service import login_issue_token, switch_tenant
 
@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 class LoginIn(BaseModel):
     """Request schema for user login."""
-    email: EmailStr = EmailStr(..., description="User email address")
-    password: str = ..., description="User password")
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
 
 
 class LoginOut(BaseModel):
@@ -39,7 +39,7 @@ class MeOut(BaseModel):
 
 class SwitchTenantIn(BaseModel):
     """Request schema for tenant switch."""
-    tenant_id: str = ..., description="Target tenant identifier")
+    tenant_id: str = Field(..., description="Target tenant identifier")
 
 
 class SwitchTenantOut(BaseModel):

@@ -1,20 +1,55 @@
-# app/api/v1/tenants_members.py
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+"""
+Team members endpoints for Settings module.
+
+Follows Layer 2 and Layer 4 rules:
+- Settings read → min role observer
+- All queries MUST be tenant-scoped
+- Never allow cross-tenant access
+"""
+from __future__ import annotations
+from fastapi import APIRouter, Depends, Query
 from core.auth import auth_required, Authed
 from core.db import get_conn
+from core.roles import require_min_role
+from core.errors import http_error, ErrorCode
 
 router = APIRouter(prefix="/api/v1", tags=["team"])
+
 
 @router.get("/tenants/{tenant_id}/members")
 def list_members(
     tenant_id: str,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
-    auth: Authed = Depends(auth_required),
-):
-    # Evitar cross-tenant por token
-    if getattr(auth, "tenant_id", None) != tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Wrong tenant in token")
+    auth: Authed = Depends(require_min_role("observer")),
+) -> dict:
+    """
+    List team members for a tenant.
+    
+    Follows Layer 2 and Layer 4 rules:
+    - Settings read → min role observer
+    - Tenant isolation enforced (prevent cross-tenant access)
+    - All queries MUST be tenant-scoped
+    
+    Args:
+        tenant_id: Tenant identifier (must match auth.tenant_id)
+        page: Page number (1-based)
+        size: Page size (1-200)
+        auth: Authenticated user context (min role: observer)
+    
+    Returns:
+        Dict with items list containing member information
+    
+    Raises:
+        HTTPException: 403 if tenant_id doesn't match auth
+    """
+    # Enforce tenant isolation - prevent cross-tenant access
+    if auth.tenant_id != tenant_id:
+        raise http_error(
+            status_code=403,
+            code=ErrorCode.FORBIDDEN,
+            message="Access denied to this tenant",
+        )
 
     offset = (page - 1) * size
 

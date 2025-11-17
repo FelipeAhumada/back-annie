@@ -1,0 +1,193 @@
+# Cursor Rules — Annie-AI Backend (FastAPI / Python)
+
+You are an expert backend engineer and security architect working on the Annie-AI multi-tenant CRM.
+You MUST follow these rules for ALL changes in this repository, unless a file has a more specific rule that overrides them.
+
+The stack is:
+- Python 3, FastAPI, SQLAlchemy/PostgreSQL, Valkey/Redis
+- JWT-based authentication, multi-tenant (user_tenants, roles per tenant)
+- Deployed via Docker/Docker Compose, behind reverse proxy and WAF
+
+Your main goals are:
+- Keep the codebase secure, maintainable and consistent.
+- Protect tenant isolation, secrets, and user data at all times.
+- Enforce clear separation of concerns between layers.
+
+---
+
+## 0. General Coding Standards (apply everywhere)
+
+- Always follow **PEP8** and type hints (`from __future__ import annotations` where useful).
+- Prefer **pure functions** and **small, focused modules**.
+- Avoid “smart” one-liners; **clarity > cleverness**.
+- Write **docstrings** for public functions, classes, and complex endpoints.
+- Use **dependency injection** via FastAPI `Depends` instead of global state.
+- Use descriptive names in English: `tenant_id`, `current_user`, `access_token`, `role`, etc.
+- All new code MUST include basic error handling and logging where relevant.
+- Do NOT introduce circular imports; if needed, extract shared logic into `core/` or `common/`.
+
+---
+
+## Layer 1 — Authentication & Session Security
+
+**Scope:** Everything under `app/core/security.py`, `app/api/*auth*`, token creation/validation.
+
+- JWT:
+  - Sign tokens with strong, private signing keys from environment variables.
+  - NEVER hardcode secrets or keys in the repository.
+  - Include `user_id`, `tenant_id`, and `role` in JWT claims when appropriate.
+  - Set sensible expirations for access tokens and refresh tokens.
+- Passwords:
+  - Always use a strong hashing algorithm (e.g. `argon2` or `bcrypt`) via a dedicated helper.
+  - NEVER log plaintext passwords or hashes.
+- When adding or changing `/auth/*` endpoints:
+  - Validate input with Pydantic schemas.
+  - Return minimal information on failure (no “user not found vs wrong password” distinction).
+- Only accept tokens via secure headers (`Authorization: Bearer <token>`).
+- Enforce HTTPS in deployment assumptions; assume tokens are never sent over HTTP.
+
+---
+
+## Layer 2 — Authorization & RBAC
+
+**Scope:** Access control, roles per tenant, route protection.
+
+- Roles are: `owner`, `admin`, `agent`, `observer` (lowercase).
+- All endpoints that change data MUST enforce role checks via dependencies such as:
+  - `require_roles(*allowed)` or `require_min_role(min_role)`.
+- RBAC logic MUST live in a dedicated module (e.g. `app/core/roles.py`), not scattered.
+- Use clear rules:
+  - `Settings` read → min role `observer`.
+  - `Settings` write → min role `admin`.
+  - Destructive actions (delete org, billing critical ops) → role `owner`.
+- Never trust role or tenant information coming from the client; always compute from:
+  - JWT claims, then verified against DB if needed.
+- If authorization fails:
+  - Always return HTTP `403` with a structured body:
+    ```json
+    {
+      "code": "forbidden",
+      "message": "You do not have permission for this action",
+      "required_roles": [...],
+      "current_role": "agent"
+    }
+    ```
+
+---
+
+## Layer 3 — Input Validation, Serialization & API Shape
+
+**Scope:** All FastAPI routes, request/response schemas.
+
+- ALWAYS use Pydantic models (`schemas/`) for:
+  - Request bodies
+  - Response models
+- Never accept untyped `dict` or `Any` payloads from clients.
+- Validate and normalize:
+  - Emails, phone numbers, URLs, enums (role names, channel types, etc.).
+- Never expose internal IDs or fields that should be hidden (password hashes, secrets, tokens).
+  - Use dedicated response schemas that exclude sensitive fields.
+- If you add or change endpoints:
+  - Define both `Request` and `Response` schemas.
+  - Document fields with clear descriptions and examples where helpful.
+
+---
+
+## Layer 4 — Data Access & Multi-Tenant Isolation
+
+**Scope:** Repositories, services, DB queries.
+
+- All queries MUST be **tenant-scoped**:
+  - Always filter by `tenant_id` from the authenticated context.
+  - Never allow cross-tenant access unless it’s a clearly defined system-level operation.
+- Data access MUST be routed through repository/service layers:
+  - No raw queries inside API routes.
+  - Keep a clean separation: API → service → repository → DB.
+- When adding a new model:
+  - If it is tenant-specific, include `tenant_id` as a required field.
+  - Enforce `tenant_id` in ORM relationships and foreign keys.
+- For caching layers (Redis/Valkey, etc.):
+  - Namespaces MUST include tenant context (e.g. `tenant:{tenant_id}:...`).
+- Avoid N+1 query patterns; prefer `.join` and `.selectinload` where appropriate.
+
+---
+
+## Layer 5 — Secrets, Configuration & Environment
+
+**Scope:** Config loading, `.env`, secrets usage.
+
+- All secrets (DB URLs, JWT keys, API keys, third-party credentials) MUST come from:
+  - Environment variables or a secure secret store (never hardcoded).
+- Centralize configuration in `core/config.py` or equivalent:
+  - Do not spread `os.getenv` calls all over the codebase.
+- Do not log secrets or environment values.
+- Use different configurations for:
+  - `development`, `staging`, `production` (at least via env variables).
+- When adding new integrations (WhatsApp API, payment gateways, etc.):
+  - Keep keys and tokens in environment config.
+  - Provide clear naming conventions like `ANNIE_WHATSAPP_API_KEY`, `OPENAI_API_KEY`.
+
+---
+
+## Layer 6 — Logging, Auditing & Observability
+
+**Scope:** Logging, structured logs, tracing hooks.
+
+- Use a centralized logger (e.g. `app/core/logger.py`).
+- Log at appropriate levels:
+  - `info` for normal lifecycle events (start/stop, major actions).
+  - `warning` for unusual but recoverable situations.
+  - `error` for failures.
+- NEVER log:
+  - Passwords, tokens, secrets, full request bodies with sensitive data.
+- For security-sensitive actions (login, failed login, role changes, billing changes):
+  - Emit structured logs (JSON if possible) with:
+    - `user_id`, `tenant_id`, `action`, `result`, `timestamp`.
+- Make sure logs are suitable for Grafana/Prometheus/Loki/ELK consumption.
+
+---
+
+## Layer 7 — Error Handling & Response Hygiene
+
+**Scope:** Exceptions, HTTP responses, error messages.
+
+- Do NOT leak internal stack traces or DB details in HTTP responses.
+- Wrap external calls (DB, upstream APIs, queues) in try/except with:
+  - Clean error translation into FastAPI `HTTPException` or custom error handlers.
+- For unexpected errors:
+  - Log full details server-side.
+  - Return a generic error:
+    ```json
+    {
+      "code": "internal_error",
+      "message": "An unexpected error occurred. Please try again later."
+    }
+    ```
+- Normalize error responses so the frontend can rely on:
+  - `code` (machine readable)
+  - `message` (human readable)
+  - Optionally `details` for validation errors.
+
+---
+
+## Layer 8 — Dependencies, Libraries & Infrastructure Security
+
+**Scope:** Dependencies, Docker, health checks, background workers.
+
+- When adding Python dependencies:
+  - Prefer well-maintained, widely used libraries.
+  - Avoid untrusted or obscure packages.
+- Keep FastAPI middlewares minimal but explicit:
+  - CORS, security headers, GZip, etc. configured centrally.
+- All external HTTP calls MUST:
+  - Use HTTPS.
+  - Have reasonable timeouts and error handling.
+- For Docker/Docker Compose:
+  - Do not run the app as root inside the container.
+  - Expose only necessary ports; rely on reverse proxy and WAF in front.
+- Background workers / task queues:
+  - MUST respect the same auth / tenant isolation rules as the API.
+  - MUST validate inputs and sanitize any data pulled from queues.
+
+---
+

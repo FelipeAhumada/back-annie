@@ -58,7 +58,8 @@ async def ingest(doc_id: str, auth: Authed = Depends(auth_required)):
     s3 = s3_client()
     import io
     b = io.BytesIO()
-    s3.download_fileobj(Bucket=os.getenv("DO_BUCKET"), Key=storage_key, Fileobj=b)
+    from core.config import settings
+    s3.download_fileobj(Bucket=settings.DO_BUCKET, Key=storage_key, Fileobj=b)
     data = b.getvalue()
     # 3) extraer texto (MVP: texto plano / pdf simple con pypdf si lo agregas)
     text = data.decode("utf-8", errors="ignore")

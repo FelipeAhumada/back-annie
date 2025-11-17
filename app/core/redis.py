@@ -1,12 +1,21 @@
-# app/core/redis.py
-import os, redis
-ssl = os.getenv("REDIS_SSL", "false").lower() in ("1","true","yes")
+"""
+Redis/Valkey client configuration.
+
+Follows Layer 5 rules:
+- All configuration from centralized settings (config.py)
+- Never use os.getenv directly
+"""
+from __future__ import annotations
+import redis
+from core.config import settings
+
+ssl = settings.REDIS_SSL.lower() in ("1", "true", "yes")
 rds = redis.Redis(
-    host=os.getenv("REDIS_HOST","localhost"),
-    port=int(os.getenv("REDIS_PORT","6379")),
-    password=os.getenv("REDIS_PASSWORD") or None,
+    host=settings.REDIS_HOST,
+    port=settings.REDIS_PORT,
+    password=settings.REDIS_PASSWORD,
     ssl=ssl,
-    ssl_cert_reqs=None,  # DO Valkey usa TLS sin cliente; evita fallar por CA
+    ssl_cert_reqs=None,  # DO Valkey uses TLS without client cert; avoids CA failure
     decode_responses=True,
     socket_keepalive=True,
 )

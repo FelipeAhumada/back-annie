@@ -1,29 +1,47 @@
-# app/services/llm_client.py
-import os
-from typing import Any
+"""
+LLM client for multiple providers (OpenAI, Gemini, Grok).
 
-# Si tienes SDKs, úsalos. Aquí dejo placeholders con 'requests' por simpleza.
+Follows Layer 5 rules:
+- All API keys from centralized settings (config.py)
+- Never use os.getenv directly
+"""
+from __future__ import annotations
+from typing import Any
 import requests
+from core.config import settings
+
 
 class LLMError(Exception):
+    """Exception raised for LLM API errors."""
     pass
 
-def _resolve_api_key(api_key_ref: str | None, provider: str) -> str | None:
-    # 1) si enviaste api_key_ref (ej. "openai_main"), busca en env/secret manager
-    # 2) fallback a env por proveedor
-    if api_key_ref:
-        # implementar tu lookup real (Vault/DO secrets/etc.)
-        # de momento probamos variables por convención
-        env_name = api_key_ref.upper()
-        if env_name in os.environ:
-            return os.environ[env_name]
 
+def _resolve_api_key(api_key_ref: str | None, provider: str) -> str | None:
+    """
+    Resolve API key for LLM provider.
+    
+    Priority:
+    1. If api_key_ref is provided, look it up (future: Vault/secret manager)
+    2. Fallback to provider-specific key from settings
+    
+    Args:
+        api_key_ref: Optional API key reference identifier
+        provider: LLM provider name (openai, gemini, grok)
+    
+    Returns:
+        API key string or None if not found
+    """
+    # TODO: Implement proper secret manager lookup for api_key_ref
+    # For now, if api_key_ref is provided, we could look it up from a secret store
+    # This is a placeholder for future implementation
+    
+    # Fallback to provider-specific keys from centralized settings
     if provider == "openai":
-        return os.getenv("OPENAI_API_KEY")
+        return settings.OPENAI_API_KEY
     if provider == "gemini":
-        return os.getenv("GEMINI_API_KEY")
+        return settings.GEMINI_API_KEY
     if provider == "grok":
-        return os.getenv("GROK_API_KEY")
+        return settings.GROK_API_KEY
     return None
 
 def generate_text(cfg: dict, messages: list[dict[str, Any]]) -> dict:

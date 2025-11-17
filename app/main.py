@@ -13,6 +13,7 @@ from api.v1.crm_cfg import router as crm_cfg_router
 from api.v1.tenants_profile import router as tenants_router
 from api.v1.admin_tenant_logo import router as admin_tenant_logo_router 
 from api.v1.tenants_members import router as tenants_members_router
+from api.v1.settings_general import router as settings_general_router
 
 app = FastAPI(title="Annie API", version="1.2")
 
@@ -43,3 +44,4 @@ app.include_router(crm_cfg_router)
 app.include_router(tenants_router)
 app.include_router(admin_tenant_logo_router)
 app.include_router(tenants_members_router)
+app.include_router(settings_general_router)
